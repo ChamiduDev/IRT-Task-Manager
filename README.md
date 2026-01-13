@@ -95,8 +95,8 @@ Each task contains the following properties:
 
 1. **Clone the repository:**
    ```bash
-   git clone <your-repo-link>
-   cd taskManager
+   git clone https://github.com/ChamiduDev/IRT-Task-Manager.git
+   cd IRT-Task-Manager
    ```
 
 2. **Install dependencies:**
