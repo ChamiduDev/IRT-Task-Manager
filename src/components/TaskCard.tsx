@@ -1,6 +1,6 @@
 import type { Task } from '../types';
 import { TaskStatus, TaskPriority } from '../types';
-import { Clock, Trash2, ChevronDown, Calendar } from 'lucide-react';
+import { Clock, Trash2, ChevronDown, Calendar, Edit } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 
@@ -8,6 +8,7 @@ interface TaskCardProps {
   task: Task;
   onStatusChange: (taskId: string, newStatus: TaskStatus) => void;
   onDelete: (taskId: string) => void;
+  onEdit: (task: Task) => void;
 }
 
 /**
@@ -15,7 +16,7 @@ interface TaskCardProps {
  * Displays individual task information with high-contrast badges, status workflow, and creation timestamp
  * Supports both light and dark modes
  */
-export const TaskCard = ({ task, onStatusChange, onDelete }: TaskCardProps) => {
+export const TaskCard = ({ task, onStatusChange, onDelete, onEdit }: TaskCardProps) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState<string>('');
@@ -30,7 +31,12 @@ export const TaskCard = ({ task, onStatusChange, onDelete }: TaskCardProps) => {
         return;
       }
 
-      const scheduledDate = new Date(task.ScheduledStartDate);
+      // Parse date string (YYYY-MM-DD) using local timezone to avoid timezone shifts
+      const dateStr = typeof task.ScheduledStartDate === 'string' 
+        ? task.ScheduledStartDate 
+        : task.ScheduledStartDate.toISOString().split('T')[0];
+      const [year, month, day] = dateStr.split('-').map(Number);
+      const scheduledDate = new Date(year, month - 1, day); // Use local timezone
       const [scheduledHours, scheduledMinutes] = task.ScheduledStartTime.split(':');
       scheduledDate.setHours(parseInt(scheduledHours, 10), parseInt(scheduledMinutes, 10), 0, 0);
 
@@ -140,7 +146,12 @@ export const TaskCard = ({ task, onStatusChange, onDelete }: TaskCardProps) => {
   const formatScheduledDateTime = (): string | null => {
     if (!task.ScheduledStartDate || !task.ScheduledStartTime) return null;
 
-    const scheduledDate = new Date(task.ScheduledStartDate);
+    // Parse date string (YYYY-MM-DD) and time string (HH:MM) using local timezone
+    const dateString = typeof task.ScheduledStartDate === 'string' 
+      ? task.ScheduledStartDate 
+      : task.ScheduledStartDate.toISOString().split('T')[0];
+    const [year, month, day] = dateString.split('-').map(Number);
+    const scheduledDate = new Date(year, month - 1, day); // Use local timezone
     const [hours, minutes] = task.ScheduledStartTime.split(':');
     scheduledDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
 
@@ -321,14 +332,26 @@ export const TaskCard = ({ task, onStatusChange, onDelete }: TaskCardProps) => {
         )}
       </div>
 
-      {/* Subtle Delete Button */}
-      <button
-        onClick={handleDeleteClick}
-        className="mt-auto w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-slate-700 hover:bg-gray-100 dark:hover:bg-slate-600 hover:text-red-600 dark:hover:text-red-400 rounded-md transition-all duration-200 border border-gray-200 dark:border-slate-600"
-      >
-        <Trash2 className="w-4 h-4" />
-        Delete
-      </button>
+      {/* Action Buttons */}
+      <div className="mt-auto flex gap-2">
+        {/* Edit Button */}
+        <button
+          onClick={() => onEdit(task)}
+          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-slate-700 hover:bg-gray-100 dark:hover:bg-slate-600 hover:text-blue-600 dark:hover:text-blue-400 rounded-md transition-all duration-200 border border-gray-200 dark:border-slate-600"
+        >
+          <Edit className="w-4 h-4" />
+          Edit
+        </button>
+
+        {/* Delete Button */}
+        <button
+          onClick={handleDeleteClick}
+          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-slate-700 hover:bg-gray-100 dark:hover:bg-slate-600 hover:text-red-600 dark:hover:text-red-400 rounded-md transition-all duration-200 border border-gray-200 dark:border-slate-600"
+        >
+          <Trash2 className="w-4 h-4" />
+          Delete
+        </button>
+      </div>
 
       {/* Delete Confirmation Modal */}
       <DeleteConfirmationModal

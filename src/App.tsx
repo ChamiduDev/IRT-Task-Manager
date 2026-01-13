@@ -1,62 +1,49 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import type { Task } from './types';
 import { TaskStatus, TaskPriority } from './types';
 import { TaskCard } from './components/TaskCard';
 import { AddTaskModal } from './components/AddTaskModal';
+import { EditTaskModal } from './components/EditTaskModal';
 import { Header } from './components/Header';
-import { Filter, CheckCircle2, Clock, AlertCircle, ListTodo, Search, X } from 'lucide-react';
+import { useTasks } from './hooks/useTasks';
+import { Filter, CheckCircle2, Clock, AlertCircle, ListTodo, Search, X, Loader2, AlertCircle as AlertCircleIcon } from 'lucide-react';
 
 /**
  * Main App Component
  * TaskMaster Pro - High-quality Task Management Dashboard with Dark Mode
+ * Now integrated with backend API
  */
 function App() {
+  // Use the tasks hook for API integration
+  const {
+    tasks,
+    loading,
+    error,
+    createTask,
+    updateTask,
+    deleteTask,
+    updateFilters,
+    refreshTasks,
+  } = useTasks();
 
-  // State for tasks
-  const [tasks, setTasks] = useState<Task[]>([
-    {
-      id: '1',
-      Title: 'Setup Project Structure',
-      Description: 'Initialize the React project with TypeScript and configure Tailwind CSS',
-      Status: TaskStatus.Completed,
-      Priority: TaskPriority.High,
-      EstimatedHours: 4,
-      AssignedTo: 'Peter Perera',
-      CreatedAt: new Date('2024-01-15'),
-      UpdatedAt: new Date('2024-01-15'),
-      CompletedAt: new Date('2024-01-16'),
-    },
-    {
-      id: '2',
-      Title: 'Implement Task Dashboard',
-      Description: 'Build the main dashboard UI with task cards and filtering capabilities',
-      Status: TaskStatus.InProgress,
-      Priority: TaskPriority.Critical,
-      EstimatedHours: 8,
-      AssignedTo: 'Nimal Siriwardena',
-      CreatedAt: new Date('2024-01-16'),
-      UpdatedAt: new Date('2024-01-17'),
-    },
-    {
-      id: '3',
-      Title: 'Add Task Validation',
-      Description: 'Implement form validation for task creation and updates',
-      Status: TaskStatus.Pending,
-      Priority: TaskPriority.Medium,
-      EstimatedHours: 3,
-      AssignedTo: 'Kasun Jayaweera',
-      CreatedAt: new Date('2024-01-17'),
-      UpdatedAt: new Date('2024-01-17'),
-    },
-  ]);
-
-  // State for modal
+  // State for modals
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
 
-  // State for filters
+  // State for filters (local UI state, synced with API via useEffect)
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'All'>('All');
   const [priorityFilter, setPriorityFilter] = useState<TaskPriority | 'All'>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // Update API filters when local filter state changes
+  useEffect(() => {
+    updateFilters({
+      status: statusFilter !== 'All' ? statusFilter : undefined,
+      priority: priorityFilter !== 'All' ? priorityFilter : undefined,
+      search: searchQuery.trim() || undefined,
+    });
+  }, [statusFilter, priorityFilter, searchQuery, updateFilters]);
 
   // Calculate task statistics
   const taskStats = useMemo(() => {
@@ -68,16 +55,10 @@ function App() {
     };
   }, [tasks]);
 
-  // Filter and sort tasks based on selected filters and search query
+  // Filter and sort tasks (filtering is now done by the API, but we still sort locally)
   const filteredTasks = useMemo(() => {
-    const filtered = tasks.filter((task) => {
-      const matchesStatus = statusFilter === 'All' || task.Status === statusFilter;
-      const matchesPriority = priorityFilter === 'All' || task.Priority === priorityFilter;
-      const matchesSearch =
-        searchQuery.trim() === '' ||
-        task.Title.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesStatus && matchesPriority && matchesSearch;
-    });
+    // Tasks are already filtered by the API, we just need to sort them
+    const filtered = [...tasks];
 
     const now = new Date();
 
@@ -88,7 +69,12 @@ function App() {
         return null;
       }
 
-      const scheduledDate = new Date(task.ScheduledStartDate);
+      // Parse date string (YYYY-MM-DD) using local timezone to avoid timezone shifts
+      const dateStr = typeof task.ScheduledStartDate === 'string' 
+        ? task.ScheduledStartDate 
+        : task.ScheduledStartDate.toISOString().split('T')[0];
+      const [year, month, day] = dateStr.split('-').map(Number);
+      const scheduledDate = new Date(year, month - 1, day); // Use local timezone
       const [hours, minutes] = task.ScheduledStartTime.split(':');
       scheduledDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
       const deadline = new Date(scheduledDate.getTime() + task.EstimatedHours * 60 * 60 * 1000);
@@ -137,94 +123,110 @@ function App() {
       // Neither has schedule - maintain order (unscheduled tasks at bottom)
       return 0;
     });
-  }, [tasks, statusFilter, priorityFilter, searchQuery]);
-
-  // Generate unique ID for new tasks
-  const generateId = (): string => {
-    return Date.now().toString(36) + Math.random().toString(36).substr(2);
-  };
+  }, [tasks]);
 
   // Handle adding a new task
-  const handleAddTask = (taskData: Omit<Task, 'id' | 'CreatedAt' | 'UpdatedAt'>) => {
-    const newTask: Task = {
-      ...taskData,
-      id: generateId(),
-      CreatedAt: new Date(),
-      UpdatedAt: new Date(),
-      // Convert scheduled date/time strings to Date objects if provided
-      ScheduledStartDate: taskData.ScheduledStartDate
-        ? new Date(taskData.ScheduledStartDate)
-        : undefined,
-      ScheduledStartTime: taskData.ScheduledStartTime || undefined,
-    };
-    setTasks((prevTasks) => [...prevTasks, newTask]);
-  };
-
-  // Auto-start tasks when scheduled time arrives
-  useEffect(() => {
-    const checkScheduledTasks = () => {
-      const now = new Date();
-      setTasks((prevTasks) =>
-        prevTasks.map((task) => {
-          // Only auto-start if task is Pending and has scheduled date/time
-          if (
-            task.Status === TaskStatus.Pending &&
-            task.ScheduledStartDate &&
-            task.ScheduledStartTime
-          ) {
-            const scheduledDate = new Date(task.ScheduledStartDate);
-            const [hours, minutes] = task.ScheduledStartTime.split(':');
-            scheduledDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
-
-            // If scheduled time has passed, auto-start the task
-            if (now >= scheduledDate) {
-              return {
-                ...task,
-                Status: TaskStatus.InProgress,
-                UpdatedAt: new Date(),
-              };
-            }
-          }
-          return task;
-        })
-      );
-    };
-
-    // Check every minute
-    const interval = setInterval(checkScheduledTasks, 60000);
-    // Also check immediately
-    checkScheduledTasks();
-
-    return () => clearInterval(interval);
-  }, []);
+  const handleAddTask = useCallback(async (taskData: Omit<Task, 'id' | 'CreatedAt' | 'UpdatedAt'>) => {
+    try {
+      await createTask({
+        Title: taskData.Title,
+        Description: taskData.Description,
+        Status: taskData.Status,
+        Priority: taskData.Priority,
+        EstimatedHours: taskData.EstimatedHours,
+        AssignedTo: taskData.AssignedTo,
+        // Use date string as-is (date inputs always provide YYYY-MM-DD format)
+        ScheduledStartDate: taskData.ScheduledStartDate
+          ? (typeof taskData.ScheduledStartDate === 'string' 
+              ? (taskData.ScheduledStartDate.trim() !== '' ? taskData.ScheduledStartDate : null)
+              : null)
+          : null,
+        ScheduledStartTime: taskData.ScheduledStartTime || null,
+      });
+      setIsModalOpen(false);
+    } catch (err) {
+      // Error is handled by the useTasks hook
+      console.error('Failed to create task:', err);
+    }
+  }, [createTask]);
 
   // Handle status change
-  const handleStatusChange = (taskId: string, newStatus: TaskStatus) => {
-    setTasks((prevTasks) =>
-      prevTasks.map((task) => {
-        if (task.id === taskId) {
-          const updatedTask = {
-            ...task,
-            Status: newStatus,
-            UpdatedAt: new Date(),
-          };
-
-          // Set CompletedAt if status is Completed
-          if (newStatus === TaskStatus.Completed && !task.CompletedAt) {
-            updatedTask.CompletedAt = new Date();
-          }
-
-          return updatedTask;
-        }
-        return task;
-      })
-    );
-  };
+  const handleStatusChange = useCallback(async (taskId: string, newStatus: TaskStatus) => {
+    try {
+      await updateTask(taskId, {
+        Status: newStatus,
+      });
+    } catch (err) {
+      // Error is handled by the useTasks hook
+      console.error('Failed to update task status:', err);
+    }
+  }, [updateTask]);
 
   // Handle task deletion
-  const handleDeleteTask = (taskId: string) => {
-    setTasks((prevTasks) => prevTasks.filter((task) => task.id !== taskId));
-  };
+  const handleDeleteTask = useCallback(async (taskId: string) => {
+    try {
+      await deleteTask(taskId);
+    } catch (err) {
+      // Error is handled by the useTasks hook
+      console.error('Failed to delete task:', err);
+    }
+  }, [deleteTask]);
+
+  // Handle edit task click
+  const handleEditTask = useCallback((task: Task) => {
+    setEditingTask(task);
+    setIsEditModalOpen(true);
+  }, []);
+
+  // Handle task update
+  const handleUpdateTask = useCallback(async (taskId: string, taskData: Partial<Task>) => {
+    console.log('handleUpdateTask: Called with taskId:', taskId, 'taskData:', taskData);
+    
+    // Build update data - include all fields from taskData
+      const updateData: any = {
+        Title: taskData.Title,
+        Description: taskData.Description,
+        Status: taskData.Status,
+        Priority: taskData.Priority,
+        // Ensure EstimatedHours is a number
+        EstimatedHours: typeof taskData.EstimatedHours === 'number' 
+          ? taskData.EstimatedHours 
+          : parseFloat(String(taskData.EstimatedHours)) || 0,
+        AssignedTo: taskData.AssignedTo,
+        // Use date string as-is (date inputs always provide YYYY-MM-DD format)
+        ScheduledStartDate: taskData.ScheduledStartDate === '' || taskData.ScheduledStartDate === null || taskData.ScheduledStartDate === undefined
+          ? null
+          : typeof taskData.ScheduledStartDate === 'string'
+          ? taskData.ScheduledStartDate
+          : taskData.ScheduledStartDate,
+        // Format ScheduledStartTime to HH:MM (remove seconds if present)
+        ScheduledStartTime: taskData.ScheduledStartTime === '' || taskData.ScheduledStartTime === null || taskData.ScheduledStartTime === undefined
+          ? null
+          : taskData.ScheduledStartTime.length > 5
+          ? taskData.ScheduledStartTime.substring(0, 5) // Remove seconds (HH:MM:SS -> HH:MM)
+          : taskData.ScheduledStartTime,
+      };
+
+      console.log('handleUpdateTask: Sending update for task', taskId, 'with data:', updateData);
+      
+      try {
+        const result = await updateTask(taskId, updateData);
+        console.log('handleUpdateTask: Update successful, result:', result);
+        // Close modal only on success
+        setIsEditModalOpen(false);
+        setEditingTask(null);
+        return result;
+      } catch (err: any) {
+        // Error is handled by the useTasks hook, but also show it here
+        console.error('handleUpdateTask: Failed to update task:', err);
+        console.error('Error response:', err.response?.data);
+        console.error('Error status:', err.response?.status);
+        console.error('Error message:', err.message);
+        // Don't close modal on error so user can see what went wrong
+        // Re-throw so EditTaskModal can handle it
+        throw err;
+      }
+  }, [updateTask]);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-200">
@@ -233,6 +235,34 @@ function App() {
 
       {/* Main Container */}
       <div className="container mx-auto px-4 py-8 max-w-7xl">
+        {/* Error Message */}
+        {error && (
+          <div className="mb-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-center gap-3">
+            <AlertCircleIcon className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-red-800 dark:text-red-300">
+                Error: {error}
+              </p>
+            </div>
+            <button
+              onClick={() => refreshTasks()}
+              className="text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-200 underline"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {/* Loading State */}
+        {loading && tasks.length === 0 && (
+          <div className="flex items-center justify-center py-12">
+            <div className="flex flex-col items-center gap-3">
+              <Loader2 className="w-8 h-8 text-blue-600 dark:text-blue-400 animate-spin" />
+              <p className="text-gray-600 dark:text-gray-400">Loading tasks...</p>
+            </div>
+          </div>
+        )}
+
         {/* Task Statistics Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {/* Total Tasks Card */}
@@ -324,7 +354,7 @@ function App() {
                 htmlFor="searchInput"
                 className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
               >
-                Search by Title
+                Search by Title or Assigned To
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -335,7 +365,7 @@ function App() {
                   id="searchInput"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search tasks..."
+                  placeholder="Search by title or assignee..."
                   className="w-full pl-10 pr-10 px-3.5 py-2.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-slate-700 text-gray-900 dark:text-white transition-all hover:border-gray-400 dark:hover:border-slate-500"
                 />
                 {searchQuery && (
@@ -414,7 +444,7 @@ function App() {
         </div>
 
         {/* Task Grid */}
-        {filteredTasks.length > 0 ? (
+        {!loading && filteredTasks.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredTasks.map((task) => (
               <TaskCard
@@ -422,16 +452,24 @@ function App() {
                 task={task}
                 onStatusChange={handleStatusChange}
                 onDelete={handleDeleteTask}
+                onEdit={handleEditTask}
               />
             ))}
           </div>
-        ) : (
+        )}
+
+        {/* Empty State */}
+        {!loading && filteredTasks.length === 0 && (
           <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-12 text-center border border-gray-200 dark:border-slate-700 transition-colors duration-200">
             <p className="text-gray-500 dark:text-gray-400 text-lg font-medium">
-              No tasks found matching your filters.
+              {tasks.length === 0
+                ? 'No tasks yet. Create your first task to get started!'
+                : 'No tasks found matching your filters.'}
             </p>
             <p className="text-gray-400 dark:text-gray-500 text-sm mt-2">
-              Try adjusting your filters or add a new task to get started.
+              {tasks.length === 0
+                ? 'Click the "Add Task" button to create a new task.'
+                : 'Try adjusting your filters or add a new task.'}
             </p>
           </div>
         )}
@@ -442,6 +480,17 @@ function App() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onAddTask={handleAddTask}
+      />
+
+      {/* Edit Task Modal */}
+      <EditTaskModal
+        isOpen={isEditModalOpen}
+        task={editingTask}
+        onClose={() => {
+          setIsEditModalOpen(false);
+          setEditingTask(null);
+        }}
+        onUpdateTask={handleUpdateTask}
       />
     </div>
   );
