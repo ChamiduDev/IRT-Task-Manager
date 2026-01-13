@@ -44,4 +44,8 @@ export interface Task {
   UpdatedAt: Date | string;
   /** Optional timestamp indicating when the task was completed */
   CompletedAt?: Date | string;
+  /** Optional scheduled start date for the task */
+  ScheduledStartDate?: Date | string;
+  /** Optional scheduled start time for the task */
+  ScheduledStartTime?: string;
 }

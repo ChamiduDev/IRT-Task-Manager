@@ -23,6 +23,8 @@ export const AddTaskModal = ({ isOpen, onClose, onAddTask }: AddTaskModalProps) 
     Priority: TaskPriority.Medium,
     EstimatedHours: 0,
     AssignedTo: '',
+    ScheduledStartDate: '',
+    ScheduledStartTime: '',
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -65,6 +67,8 @@ export const AddTaskModal = ({ isOpen, onClose, onAddTask }: AddTaskModalProps) 
         Priority: TaskPriority.Medium,
         EstimatedHours: 0,
         AssignedTo: '',
+        ScheduledStartDate: '',
+        ScheduledStartTime: '',
       });
       setErrors({});
       onClose();
@@ -100,6 +104,8 @@ export const AddTaskModal = ({ isOpen, onClose, onAddTask }: AddTaskModalProps) 
       Priority: TaskPriority.Medium,
       EstimatedHours: 0,
       AssignedTo: '',
+      ScheduledStartDate: '',
+      ScheduledStartTime: '',
     });
     setErrors({});
     onClose();
@@ -290,6 +296,53 @@ export const AddTaskModal = ({ isOpen, onClose, onAddTask }: AddTaskModalProps) 
                     {errors.AssignedTo}
                   </p>
                 )}
+              </div>
+            </div>
+
+            {/* Scheduled Date and Time Row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Scheduled Start Date */}
+              <div>
+                <label
+                  htmlFor="ScheduledStartDate"
+                  className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 transition-colors"
+                >
+                  Scheduled Start Date
+                </label>
+                <input
+                  type="date"
+                  id="ScheduledStartDate"
+                  name="ScheduledStartDate"
+                  value={formData.ScheduledStartDate}
+                  onChange={handleChange}
+                  min={new Date().toISOString().split('T')[0]}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:text-white transition-colors"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Task will auto-start at scheduled time
+                </p>
+              </div>
+
+              {/* Scheduled Start Time */}
+              <div>
+                <label
+                  htmlFor="ScheduledStartTime"
+                  className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 transition-colors"
+                >
+                  Scheduled Start Time
+                </label>
+                <input
+                  type="time"
+                  id="ScheduledStartTime"
+                  name="ScheduledStartTime"
+                  value={formData.ScheduledStartTime}
+                  onChange={handleChange}
+                  disabled={!formData.ScheduledStartDate}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Required if date is set
+                </p>
               </div>
             </div>
           </div>

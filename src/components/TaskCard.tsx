@@ -1,7 +1,7 @@
 import type { Task } from '../types';
 import { TaskStatus, TaskPriority } from '../types';
 import { Clock, Trash2, ChevronDown, Calendar } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 
 interface TaskCardProps {
@@ -18,6 +18,57 @@ interface TaskCardProps {
 export const TaskCard = ({ task, onStatusChange, onDelete }: TaskCardProps) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [timeRemaining, setTimeRemaining] = useState<string>('');
+  const [isDeadlineApproaching, setIsDeadlineApproaching] = useState(false);
+
+  // Calculate deadline and countdown timer
+  useEffect(() => {
+    const calculateDeadline = () => {
+      if (!task.ScheduledStartDate || !task.ScheduledStartTime || !task.EstimatedHours) {
+        setTimeRemaining('');
+        setIsDeadlineApproaching(false);
+        return;
+      }
+
+      const scheduledDate = new Date(task.ScheduledStartDate);
+      const [scheduledHours, scheduledMinutes] = task.ScheduledStartTime.split(':');
+      scheduledDate.setHours(parseInt(scheduledHours, 10), parseInt(scheduledMinutes, 10), 0, 0);
+
+      // Calculate deadline: scheduled start + estimated hours
+      const deadline = new Date(scheduledDate.getTime() + task.EstimatedHours * 60 * 60 * 1000);
+      const now = new Date();
+      const diff = deadline.getTime() - now.getTime();
+
+      if (diff <= 0) {
+        setTimeRemaining('Overdue');
+        setIsDeadlineApproaching(true);
+        return;
+      }
+
+      // Check if deadline is approaching (within 2 hours)
+      const hoursUntilDeadline = diff / (1000 * 60 * 60);
+      setIsDeadlineApproaching(hoursUntilDeadline <= 2);
+
+      // Format time remaining
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hoursRemaining = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+
+      if (days > 0) {
+        setTimeRemaining(`${days}d ${hoursRemaining}h remaining`);
+      } else if (hoursRemaining > 0) {
+        setTimeRemaining(`${hoursRemaining}h ${mins}m remaining`);
+      } else {
+        setTimeRemaining(`${mins}m remaining`);
+      }
+    };
+
+    calculateDeadline();
+    // Update every minute
+    const interval = setInterval(calculateDeadline, 60000);
+
+    return () => clearInterval(interval);
+  }, [task.ScheduledStartDate, task.ScheduledStartTime, task.EstimatedHours]);
 
   // Get the next available status options based on current status
   const getNextStatusOptions = (currentStatus: TaskStatus): TaskStatus[] => {
@@ -85,6 +136,41 @@ export const TaskCard = ({ task, onStatusChange, onDelete }: TaskCardProps) => {
     }
   };
 
+  // Format scheduled start date and time
+  const formatScheduledDateTime = (): string | null => {
+    if (!task.ScheduledStartDate || !task.ScheduledStartTime) return null;
+
+    const scheduledDate = new Date(task.ScheduledStartDate);
+    const [hours, minutes] = task.ScheduledStartTime.split(':');
+    scheduledDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
+
+    const now = new Date();
+    const isToday = scheduledDate.toDateString() === now.toDateString();
+    const isTomorrow = scheduledDate.toDateString() === new Date(now.getTime() + 24 * 60 * 60 * 1000).toDateString();
+
+    let dateStr: string;
+    if (isToday) {
+      dateStr = 'Today';
+    } else if (isTomorrow) {
+      dateStr = 'Tomorrow';
+    } else {
+      dateStr = scheduledDate.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: scheduledDate.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
+      });
+    }
+
+    // Format time in 12-hour format
+    const timeStr = scheduledDate.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+
+    return `${dateStr} at ${timeStr}`;
+  };
+
   const nextStatusOptions = getNextStatusOptions(task.Status);
   const canUpdateStatus = nextStatusOptions.length > 0;
 
@@ -105,8 +191,26 @@ export const TaskCard = ({ task, onStatusChange, onDelete }: TaskCardProps) => {
     }
   };
 
+  // Get card border color based on deadline
+  const getCardBorderClass = (): string => {
+    if (isDeadlineApproaching && task.Status !== TaskStatus.Completed) {
+      return 'border-red-500 dark:border-red-600 border-2';
+    }
+    return 'border-gray-200 dark:border-slate-700';
+  };
+
+  // Get card background color based on deadline
+  const getCardBgClass = (): string => {
+    if (isDeadlineApproaching && task.Status !== TaskStatus.Completed) {
+      return 'bg-red-50 dark:bg-red-900/10';
+    }
+    return 'bg-white dark:bg-slate-800';
+  };
+
   return (
-    <div className="bg-white dark:bg-slate-800 rounded-lg shadow-md p-6 hover:shadow-xl transition-all duration-300 border border-gray-200 dark:border-slate-700 flex flex-col h-full">
+    <div
+      className={`${getCardBgClass()} rounded-lg shadow-md p-6 hover:shadow-xl transition-all duration-300 ${getCardBorderClass()} flex flex-col h-full`}
+    >
       {/* Header with Title and Priority Badge */}
       <div className="flex justify-between items-start mb-4 gap-3">
         <h3 className="text-lg font-bold text-gray-900 dark:text-white flex-1 leading-tight transition-colors">
@@ -146,6 +250,28 @@ export const TaskCard = ({ task, onStatusChange, onDelete }: TaskCardProps) => {
           <Calendar className="w-3.5 h-3.5 mr-1.5" />
           <span>Created {formatDate(task.CreatedAt)}</span>
         </div>
+
+        {/* Scheduled Start Date/Time - Only show if scheduled date/time exists */}
+        {formatScheduledDateTime() && (
+          <div className="flex items-center text-blue-600 dark:text-blue-400 text-xs font-medium transition-colors">
+            <Calendar className="w-3.5 h-3.5 mr-1.5" />
+            <span>Starts: {formatScheduledDateTime()}</span>
+          </div>
+        )}
+
+        {/* Countdown Timer - Only show if scheduled date/time exists */}
+        {timeRemaining && (
+          <div
+            className={`flex items-center text-xs font-semibold px-2.5 py-1.5 rounded-md ${
+              isDeadlineApproaching
+                ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-300 dark:border-red-700'
+                : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border border-blue-300 dark:border-blue-700'
+            }`}
+          >
+            <Clock className="w-3.5 h-3.5 mr-1.5" />
+            <span>{timeRemaining}</span>
+          </div>
+        )}
       </div>
 
       {/* Status Section */}

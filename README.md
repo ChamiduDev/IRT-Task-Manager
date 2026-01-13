@@ -25,6 +25,10 @@ This is a task management system built as part of a 6-hour technical interview. 
 - **Update Status:** Workflow-based status updates (Pending → In Progress → Completed)
 - **Delete Tasks:** Confirmation modal for safe task deletion
 - **Task Cards:** Beautiful card-based layout with all task details
+- **Scheduled Tasks:** Set start date and time for tasks with automatic status updates
+- **Auto-Start:** Tasks automatically move to "In Progress" when scheduled time arrives
+- **Countdown Timer:** Real-time countdown showing time remaining until deadline
+- **Deadline Warnings:** Visual alerts (red card border/background) when deadline is approaching (within 2 hours)
 
 ### Filtering & Search
 - **Real-time Search:** Search tasks by title as you type
@@ -43,6 +47,8 @@ This is a task management system built as part of a 6-hour technical interview. 
 - Logical progression: Pending → In Progress → Completed
 - Status dropdown only shows valid next steps
 - Visual status badges with appropriate colors
+- **Auto-Start on Schedule:** Tasks with scheduled date/time automatically start when the scheduled time arrives
+- **Manual Override:** Tasks can still be manually moved to "In Progress" before scheduled time
 
 ### Responsive Design
 - Fully functional on Mobile, Tablet, and Desktop
@@ -56,12 +62,21 @@ This is a task management system built as part of a 6-hour technical interview. 
 - Smooth transitions between light and dark themes
 - All components styled for both themes
 
+### Smart Task Sorting
+- **Priority Sorting:** Tasks sorted by remaining time until deadline
+- **Scheduled Tasks First:** Tasks with scheduled date/time appear at the top, sorted by least remaining time
+- **Unscheduled Tasks:** Tasks without scheduled date/time stay at the bottom
+- **Completed Tasks:** Always appear at the very bottom of the list
+- **Real-time Updates:** List automatically reorders as time passes
+
 ### UI/UX Features
 - Glassmorphism effects on header and modals
 - Blurred backdrop modals for better focus
 - Smooth animations and transitions
 - Form validation with error messages
 - Accessible design with proper ARIA labels
+- **Countdown Display:** Visual countdown timer on task cards showing time until deadline
+- **Deadline Indicators:** Color-coded warnings (red) when deadlines are approaching
 
 ## 📋 Task Properties
 
@@ -84,6 +99,8 @@ Each task contains the following properties:
 - **CreatedAt** (required): Timestamp when the task was created
 - **UpdatedAt** (required): Timestamp when the task was last updated
 - **CompletedAt** (optional): Timestamp when the task was completed
+- **ScheduledStartDate** (optional): Date when the task is scheduled to start
+- **ScheduledStartTime** (optional): Time when the task is scheduled to start (format: "HH:MM")
 
 ## ⚙️ Setup Instructions
 
@@ -127,6 +144,41 @@ The production build will be created in the `dist` folder.
 npm run preview
 ```
 
+## ⏰ Scheduled Tasks & Auto-Start
+
+### Scheduled Date/Time
+- Tasks can be assigned a scheduled start date and time when created
+- Scheduled information is displayed on the task card
+- Format: Date picker for date, time picker for time (HH:MM)
+
+### Auto-Start Functionality
+- Tasks with scheduled date/time automatically move to "In Progress" when the scheduled time arrives
+- System checks every minute for tasks that should auto-start
+- Only tasks with "Pending" status are auto-started
+- Manual status updates still work independently
+
+### Countdown Timer
+- Real-time countdown displays time remaining until deadline
+- Deadline = Scheduled Start Date/Time + Estimated Hours
+- Updates every minute automatically
+- Shows formats: "Xd Xh remaining", "Xh Xm remaining", or "Xm remaining"
+- Displays "Overdue" if deadline has passed
+
+### Deadline Warnings
+- Visual warning system when deadline is approaching
+- Card border turns red when deadline is within 2 hours
+- Card background gets red tint for urgent tasks
+- Warnings only show for non-completed tasks
+- Countdown timer badge changes color (red when approaching, blue otherwise)
+
+### Smart Sorting
+- Tasks are automatically sorted by remaining time until deadline
+- Tasks with least remaining time appear at the top
+- Tasks with scheduled date/time are prioritized
+- Tasks without scheduled date/time stay at the bottom
+- Completed tasks always appear at the very bottom
+- List reorders automatically as time passes
+
 ## 🔮 Future Integration
 
 The current version uses **Mock Data** for the frontend review phase. The following integrations are planned for the next phase:
@@ -139,6 +191,8 @@ The current version uses **Mock Data** for the frontend review phase. The follow
 - **Task History:** Audit trail for task changes
 - **File Attachments:** Support for task-related documents
 - **Notifications:** Real-time notifications for task assignments and updates
+- **Recurring Tasks:** Support for repeating scheduled tasks
+- **Task Dependencies:** Link tasks that depend on each other
 
 ## 📝 Assumptions Made
 
@@ -149,10 +203,13 @@ The current version uses **Mock Data** for the frontend review phase. The follow
 5. **No Authentication:** User authentication is assumed to be handled by the backend API
 6. **Single User:** Current implementation assumes single-user context (multi-user support in future)
 7. **Local Storage:** Theme preference is stored in browser localStorage
-8. **Responsive Breakpoints:** 
-   - Mobile: < 640px
-   - Tablet: 640px - 1024px
-   - Desktop: > 1024px
+8. **Auto-Start Check Interval:** System checks for scheduled tasks every 60 seconds
+9. **Deadline Warning Threshold:** Visual warnings appear when deadline is within 2 hours
+10. **Time Zone:** All dates and times use the user's local timezone
+11. **Responsive Breakpoints:** 
+    - Mobile: < 640px
+    - Tablet: 640px - 1024px
+    - Desktop: > 1024px
 
 ## 📂 Project Structure
 
@@ -184,10 +241,18 @@ taskManager/
 ## 🎨 Component Overview
 
 - **Header:** Sticky header with logo, title, theme toggle, and add task button
-- **TaskCard:** Individual task display with status workflow and delete functionality
-- **AddTaskModal:** Form modal for creating new tasks with validation
+- **TaskCard:** Individual task display with status workflow, countdown timer, deadline warnings, and delete functionality
+- **AddTaskModal:** Form modal for creating new tasks with validation, including scheduled date/time inputs
 - **DeleteConfirmationModal:** Confirmation dialog for task deletion
 - **ThemeContext:** Context provider for dark/light mode management
+
+### TaskCard Features
+- Displays scheduled start date and time (if set)
+- Real-time countdown timer showing time until deadline
+- Visual deadline warnings (red border/background when approaching)
+- Status workflow dropdown with valid transitions
+- Priority and status badges with color coding
+- Creation timestamp display
 
 ## 📄 License
 

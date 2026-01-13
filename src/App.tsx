@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import type { Task } from './types';
 import { TaskStatus, TaskPriority } from './types';
 import { TaskCard } from './components/TaskCard';
@@ -68,15 +68,74 @@ function App() {
     };
   }, [tasks]);
 
-  // Filter tasks based on selected filters and search query
+  // Filter and sort tasks based on selected filters and search query
   const filteredTasks = useMemo(() => {
-    return tasks.filter((task) => {
+    const filtered = tasks.filter((task) => {
       const matchesStatus = statusFilter === 'All' || task.Status === statusFilter;
       const matchesPriority = priorityFilter === 'All' || task.Priority === priorityFilter;
       const matchesSearch =
         searchQuery.trim() === '' ||
         task.Title.toLowerCase().includes(searchQuery.toLowerCase());
       return matchesStatus && matchesPriority && matchesSearch;
+    });
+
+    const now = new Date();
+
+    // Helper function to calculate remaining time until deadline (in milliseconds)
+    // Only for tasks with scheduled date/time
+    const getRemainingTime = (task: Task): number | null => {
+      if (!task.ScheduledStartDate || !task.ScheduledStartTime) {
+        return null;
+      }
+
+      const scheduledDate = new Date(task.ScheduledStartDate);
+      const [hours, minutes] = task.ScheduledStartTime.split(':');
+      scheduledDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
+      const deadline = new Date(scheduledDate.getTime() + task.EstimatedHours * 60 * 60 * 1000);
+
+      return deadline.getTime() - now.getTime();
+    };
+
+    // Sort tasks with priority:
+    // 1. Tasks with scheduled date/time (not completed) - sorted by remaining time (least first)
+    // 2. Tasks without scheduled date/time (not completed) - at the bottom
+    // 3. Completed tasks - at the very bottom
+    return filtered.sort((a, b) => {
+      const aIsCompleted = a.Status === TaskStatus.Completed;
+      const bIsCompleted = b.Status === TaskStatus.Completed;
+
+      // Both completed - maintain order (completed tasks at bottom)
+      if (aIsCompleted && bIsCompleted) {
+        return 0;
+      }
+
+      // Only one completed - completed task goes to bottom
+      if (aIsCompleted && !bIsCompleted) return 1;
+      if (!aIsCompleted && bIsCompleted) return -1;
+
+      // Neither is completed - check for scheduled date/time
+      const aHasSchedule = a.ScheduledStartDate && a.ScheduledStartTime;
+      const bHasSchedule = b.ScheduledStartDate && b.ScheduledStartTime;
+
+      // Both have scheduled date/time - sort by remaining time (least first)
+      if (aHasSchedule && bHasSchedule) {
+        const aRemaining = getRemainingTime(a) ?? Infinity;
+        const bRemaining = getRemainingTime(b) ?? Infinity;
+
+        // If remaining times are equal (within 1 minute), maintain previous order
+        if (Math.abs(aRemaining - bRemaining) < 60000) {
+          return 0;
+        }
+
+        return aRemaining - bRemaining;
+      }
+
+      // Only one has schedule - scheduled task goes to top
+      if (aHasSchedule && !bHasSchedule) return -1;
+      if (!aHasSchedule && bHasSchedule) return 1;
+
+      // Neither has schedule - maintain order (unscheduled tasks at bottom)
+      return 0;
     });
   }, [tasks, statusFilter, priorityFilter, searchQuery]);
 
@@ -92,9 +151,52 @@ function App() {
       id: generateId(),
       CreatedAt: new Date(),
       UpdatedAt: new Date(),
+      // Convert scheduled date/time strings to Date objects if provided
+      ScheduledStartDate: taskData.ScheduledStartDate
+        ? new Date(taskData.ScheduledStartDate)
+        : undefined,
+      ScheduledStartTime: taskData.ScheduledStartTime || undefined,
     };
     setTasks((prevTasks) => [...prevTasks, newTask]);
   };
+
+  // Auto-start tasks when scheduled time arrives
+  useEffect(() => {
+    const checkScheduledTasks = () => {
+      const now = new Date();
+      setTasks((prevTasks) =>
+        prevTasks.map((task) => {
+          // Only auto-start if task is Pending and has scheduled date/time
+          if (
+            task.Status === TaskStatus.Pending &&
+            task.ScheduledStartDate &&
+            task.ScheduledStartTime
+          ) {
+            const scheduledDate = new Date(task.ScheduledStartDate);
+            const [hours, minutes] = task.ScheduledStartTime.split(':');
+            scheduledDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
+
+            // If scheduled time has passed, auto-start the task
+            if (now >= scheduledDate) {
+              return {
+                ...task,
+                Status: TaskStatus.InProgress,
+                UpdatedAt: new Date(),
+              };
+            }
+          }
+          return task;
+        })
+      );
+    };
+
+    // Check every minute
+    const interval = setInterval(checkScheduledTasks, 60000);
+    // Also check immediately
+    checkScheduledTasks();
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Handle status change
   const handleStatusChange = (taskId: string, newStatus: TaskStatus) => {
