@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import type { Task } from '../types';
 import { TaskStatus, TaskPriority } from '../types';
+import { UserSearch } from './UserSearch';
 import { X } from 'lucide-react';
 
 interface EditTaskModalProps {
@@ -23,7 +24,7 @@ export const EditTaskModal = ({ isOpen, task, onClose, onUpdateTask }: EditTaskM
     Status: TaskStatus.Pending,
     Priority: TaskPriority.Medium,
     EstimatedHours: 0,
-    AssignedTo: '',
+    AssignedTo: [] as string[],
     ScheduledStartDate: '',
     ScheduledStartTime: '',
   });
@@ -40,13 +41,35 @@ export const EditTaskModal = ({ isOpen, task, onClose, onUpdateTask }: EditTaskM
         ? task.ScheduledStartDate
         : '';
 
+      // Handle AssignedTo: convert string to array or use array directly
+      let assignedTo: string[] = [];
+      if (Array.isArray(task.AssignedTo)) {
+        assignedTo = task.AssignedTo;
+      } else if (typeof task.AssignedTo === 'string' && task.AssignedTo.trim()) {
+        // For backward compatibility: if it's a string, try to parse as JSON
+        try {
+          const parsed = JSON.parse(task.AssignedTo);
+          if (Array.isArray(parsed)) {
+            assignedTo = parsed;
+          } else {
+            // Old format: single string, convert to array with single element
+            // But we don't have user IDs in old format, so we'll leave it empty
+            // and let user re-select
+            assignedTo = [];
+          }
+        } catch {
+          // Not JSON, old format - leave empty for user to re-select
+          assignedTo = [];
+        }
+      }
+
       setFormData({
         Title: task.Title || '',
         Description: task.Description || '',
         Status: task.Status || TaskStatus.Pending,
         Priority: task.Priority || TaskPriority.Medium,
         EstimatedHours: task.EstimatedHours || 0,
-        AssignedTo: task.AssignedTo || '',
+        AssignedTo: assignedTo,
         ScheduledStartDate: scheduledDate,
         ScheduledStartTime: task.ScheduledStartTime || '',
       });
@@ -70,8 +93,8 @@ export const EditTaskModal = ({ isOpen, task, onClose, onUpdateTask }: EditTaskM
       newErrors.EstimatedHours = 'Estimated hours must be greater than 0';
     }
 
-    if (!formData.AssignedTo.trim()) {
-      newErrors.AssignedTo = 'Assigned To is required';
+    if (formData.AssignedTo.length === 0) {
+      newErrors.AssignedTo = 'At least one user must be assigned';
     }
 
     setErrors(newErrors);
@@ -335,31 +358,28 @@ export const EditTaskModal = ({ isOpen, task, onClose, onUpdateTask }: EditTaskM
               </div>
 
               {/* Assigned To Field */}
-              <div>
+              <div className="md:col-span-2">
                 <label
                   htmlFor="editAssignedTo"
                   className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 transition-colors"
                 >
                   Assigned To <span className="text-red-500 dark:text-red-400">*</span>
                 </label>
-                <input
-                  type="text"
-                  id="editAssignedTo"
-                  name="AssignedTo"
-                  value={formData.AssignedTo}
-                  onChange={handleChange}
-                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:text-white dark:border-slate-600 transition-colors ${
-                    errors.AssignedTo
-                      ? 'border-red-500 dark:border-red-400'
-                      : 'border-gray-300 dark:border-slate-600'
-                  }`}
-                  placeholder="Enter assignee name"
+                <UserSearch
+                  selectedUserIds={formData.AssignedTo}
+                  onSelectionChange={(userIds) => {
+                    setFormData((prev) => ({ ...prev, AssignedTo: userIds }));
+                    if (errors.AssignedTo) {
+                      setErrors((prev) => {
+                        const newErrors = { ...prev };
+                        delete newErrors.AssignedTo;
+                        return newErrors;
+                      });
+                    }
+                  }}
+                  error={errors.AssignedTo}
+                  placeholder="Search users by username or name..."
                 />
-                {errors.AssignedTo && (
-                  <p className="mt-1 text-sm text-red-500 dark:text-red-400">
-                    {errors.AssignedTo}
-                  </p>
-                )}
               </div>
             </div>
 

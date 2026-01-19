@@ -19,6 +19,39 @@ const apiClient = axios.create({
 });
 
 /**
+ * Add request interceptor to include auth token
+ */
+apiClient.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('authToken');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+/**
+ * Add response interceptor to handle auth errors
+ */
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Token expired or invalid, clear auth data
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('authUser');
+      // Redirect to login (handled by App component)
+      window.location.href = '/';
+    }
+    return Promise.reject(error);
+  }
+);
+
+/**
  * API Response wrapper
  */
 interface ApiResponse<T> {
@@ -37,7 +70,7 @@ export interface CreateTaskDTO {
   Status: TaskStatus;
   Priority: TaskPriority;
   EstimatedHours: number;
-  AssignedTo: string;
+  AssignedTo: string | string[];
   ScheduledStartDate?: string | null;
   ScheduledStartTime?: string | null;
 }
@@ -51,7 +84,7 @@ export interface UpdateTaskDTO {
   Status?: TaskStatus;
   Priority?: TaskPriority;
   EstimatedHours?: number;
-  AssignedTo?: string;
+  AssignedTo?: string | string[];
   ScheduledStartDate?: string | null;
   ScheduledStartTime?: string | null;
 }
@@ -63,6 +96,7 @@ export interface TaskQueryParams {
   status?: TaskStatus | 'All';
   priority?: TaskPriority | 'All';
   search?: string;
+  userId?: string;
 }
 
 /**
@@ -76,6 +110,7 @@ const parseTaskDates = (task: any): Task => {
     ...task,
     CreatedAt: task.CreatedAt ? new Date(task.CreatedAt) : new Date(),
     UpdatedAt: task.UpdatedAt ? new Date(task.UpdatedAt) : new Date(),
+    StartedAt: task.StartedAt ? new Date(task.StartedAt) : undefined,
     CompletedAt: task.CompletedAt ? new Date(task.CompletedAt) : undefined,
     // ScheduledStartDate is returned as string (YYYY-MM-DD) from backend - use as-is
     ScheduledStartDate: task.ScheduledStartDate || undefined,
@@ -90,7 +125,7 @@ export const taskApi = {
   /**
    * Get all tasks with optional filtering
    */
-  async getAllTasks(params?: TaskQueryParams): Promise<Task[]> {
+  async getAllTasks(params?: TaskQueryParams & { excludeCompleted?: boolean }): Promise<Task[]> {
     try {
       // Build query string
       const queryParams: Record<string, string> = {};
@@ -104,6 +139,18 @@ export const taskApi = {
       if (params?.search && params.search.trim() !== '') {
         queryParams.search = params.search.trim();
       }
+      if (params?.userId && params.userId !== 'All') {
+        queryParams.userId = params.userId;
+      }
+      // Explicitly handle excludeCompleted: false to include completed tasks
+      // This is important for the All Tasks page
+      // We must check for false explicitly (not just truthy/falsy) because false is a valid value
+      if ('excludeCompleted' in (params || {}) && params?.excludeCompleted === false) {
+        queryParams.excludeCompleted = 'false';
+      } else if (params?.excludeCompleted === true) {
+        queryParams.excludeCompleted = 'true';
+      }
+      // If excludeCompleted is undefined, don't include it (backend will default to excluding completed tasks)
 
       const response = await apiClient.get<ApiResponse<Task[]>>('/tasks', {
         params: queryParams,
@@ -116,6 +163,117 @@ export const taskApi = {
       return [];
     } catch (error) {
       console.error('Error fetching tasks:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get all completed tasks with optional filtering
+   */
+  async getCompletedTasks(params?: TaskQueryParams): Promise<ApiResponse<Task[]>> {
+    try {
+      // Build query string
+      const queryParams: Record<string, string> = {};
+      
+      if (params?.priority && params.priority !== 'All') {
+        queryParams.priority = params.priority;
+      }
+      if (params?.userId && params.userId !== 'All') {
+        queryParams.userId = params.userId;
+      }
+
+      const response = await apiClient.get<ApiResponse<Task[]>>('/tasks/completed', {
+        params: queryParams,
+      });
+
+      if (response.data.success && Array.isArray(response.data.data)) {
+        // Parse dates for all tasks
+        return {
+          ...response.data,
+          data: response.data.data.map(parseTaskDates),
+        };
+      }
+      return { success: true, data: [] };
+    } catch (error) {
+      console.error('Error fetching completed tasks:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get user completed task durations summary
+   * Returns total duration for each user's completed tasks
+   */
+  async getUserDurationsSummary(): Promise<ApiResponse<Array<{ userId: string; userName: string; totalHours: number; taskCount: number }>>> {
+    try {
+      const response = await apiClient.get<ApiResponse<Array<{ userId: string; userName: string; totalHours: number; taskCount: number }>>>('/tasks/durations-summary');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching user durations summary:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get overall task accuracy
+   * Returns average accuracy percentage across all completed tasks
+   */
+  async getOverallAccuracy(): Promise<ApiResponse<{ accuracy: number | null; taskCount: number }>> {
+    try {
+      const response = await apiClient.get<ApiResponse<{ accuracy: number | null; taskCount: number }>>('/tasks/accuracy');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching overall accuracy:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get total completed task duration
+   * Returns total hours spent on all completed tasks
+   */
+  async getTotalCompletedDuration(): Promise<ApiResponse<{ totalHours: number; taskCount: number }>> {
+    try {
+      const response = await apiClient.get<ApiResponse<{ totalHours: number; taskCount: number }>>('/tasks/duration');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching total completed duration:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get all hold tasks with optional filtering
+   */
+  async getHoldTasks(params?: TaskQueryParams): Promise<ApiResponse<Task[]>> {
+    try {
+      // Build query string
+      const queryParams: Record<string, string> = {};
+      
+      if (params?.priority && params.priority !== 'All') {
+        queryParams.priority = params.priority;
+      }
+      if (params?.search && params.search.trim() !== '') {
+        queryParams.search = params.search.trim();
+      }
+      if (params?.userId) {
+        queryParams.userId = params.userId;
+      }
+
+      const response = await apiClient.get<ApiResponse<Task[]>>('/tasks/hold', {
+        params: queryParams,
+      });
+
+      if (response.data.success && Array.isArray(response.data.data)) {
+        // Parse dates for all tasks
+        return {
+          ...response.data,
+          data: response.data.data.map(parseTaskDates),
+        };
+      }
+      return { success: true, data: [] };
+    } catch (error) {
+      console.error('Error fetching hold tasks:', error);
       throw error;
     }
   },

@@ -6,6 +6,7 @@ export enum TaskStatus {
   Pending = "Pending",
   InProgress = "In Progress",
   Completed = "Completed",
+  Hold = "Hold",
 }
 
 /**
@@ -36,16 +37,26 @@ export interface Task {
   Priority: TaskPriority;
   /** Estimated number of hours required to complete the task */
   EstimatedHours: number;
-  /** Name or identifier of the person assigned to this task */
-  AssignedTo: string;
+  /** Array of user IDs assigned to this task (can be string for backward compatibility) */
+  AssignedTo: string | string[];
   /** Timestamp indicating when the task was created */
   CreatedAt: Date | string;
   /** Timestamp indicating when the task was last updated */
   UpdatedAt: Date | string;
+  /** Optional timestamp indicating when the task was started (status changed to In Progress) */
+  StartedAt?: Date | string | null;
   /** Optional timestamp indicating when the task was completed */
-  CompletedAt?: Date | string;
+  CompletedAt?: Date | string | null;
   /** Optional scheduled start date for the task */
   ScheduledStartDate?: Date | string;
   /** Optional scheduled start time for the task */
   ScheduledStartTime?: string;
+  /** Optional user ID of who put this task on hold */
+  PutOnHoldBy?: string | null;
+  /** Optional name of who put this task on hold (for display purposes) */
+  PutOnHoldByName?: string | null;
+  /** Optional user ID of who last updated this task */
+  UpdatedBy?: string | null;
+  /** Optional name of who last updated this task (for display purposes) */
+  UpdatedByName?: string | null;
 }

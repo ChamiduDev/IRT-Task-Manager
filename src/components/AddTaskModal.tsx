@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { Task } from '../types';
 import { TaskStatus, TaskPriority } from '../types';
+import { UserSearch } from './UserSearch';
 import { X } from 'lucide-react';
 
 interface AddTaskModalProps {
@@ -15,6 +16,10 @@ interface AddTaskModalProps {
  * Provides a form to create new tasks with validation
  * Supports both light and dark modes
  */
+// Character limits for form fields
+const TITLE_MAX_LENGTH = 255;
+const DESCRIPTION_MAX_LENGTH = 5000;
+
 export const AddTaskModal = ({ isOpen, onClose, onAddTask }: AddTaskModalProps) => {
   const [formData, setFormData] = useState({
     Title: '',
@@ -22,7 +27,7 @@ export const AddTaskModal = ({ isOpen, onClose, onAddTask }: AddTaskModalProps) 
     Status: TaskStatus.Pending,
     Priority: TaskPriority.Medium,
     EstimatedHours: 0,
-    AssignedTo: '',
+    AssignedTo: [] as string[],
     ScheduledStartDate: '',
     ScheduledStartTime: '',
   });
@@ -35,18 +40,22 @@ export const AddTaskModal = ({ isOpen, onClose, onAddTask }: AddTaskModalProps) 
 
     if (!formData.Title.trim()) {
       newErrors.Title = 'Title is required';
+    } else if (formData.Title.length > TITLE_MAX_LENGTH) {
+      newErrors.Title = `Title must be ${TITLE_MAX_LENGTH} characters or less`;
     }
 
     if (!formData.Description.trim()) {
       newErrors.Description = 'Description is required';
+    } else if (formData.Description.length > DESCRIPTION_MAX_LENGTH) {
+      newErrors.Description = `Description must be ${DESCRIPTION_MAX_LENGTH} characters or less`;
     }
 
     if (formData.EstimatedHours <= 0) {
       newErrors.EstimatedHours = 'Estimated hours must be greater than 0';
     }
 
-    if (!formData.AssignedTo.trim()) {
-      newErrors.AssignedTo = 'Assigned To is required';
+    if (formData.AssignedTo.length === 0) {
+      newErrors.AssignedTo = 'At least one user must be assigned';
     }
 
     setErrors(newErrors);
@@ -66,7 +75,7 @@ export const AddTaskModal = ({ isOpen, onClose, onAddTask }: AddTaskModalProps) 
         Status: TaskStatus.Pending,
         Priority: TaskPriority.Medium,
         EstimatedHours: 0,
-        AssignedTo: '',
+        AssignedTo: [],
         ScheduledStartDate: '',
         ScheduledStartTime: '',
       });
@@ -80,9 +89,18 @@ export const AddTaskModal = ({ isOpen, onClose, onAddTask }: AddTaskModalProps) 
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target;
+    
+    // Enforce character limits
+    let processedValue = value;
+    if (name === 'Title' && value.length > TITLE_MAX_LENGTH) {
+      processedValue = value.slice(0, TITLE_MAX_LENGTH);
+    } else if (name === 'Description' && value.length > DESCRIPTION_MAX_LENGTH) {
+      processedValue = value.slice(0, DESCRIPTION_MAX_LENGTH);
+    }
+    
     setFormData((prev) => ({
       ...prev,
-      [name]: name === 'EstimatedHours' ? parseFloat(value) || 0 : value,
+      [name]: name === 'EstimatedHours' ? parseFloat(processedValue) || 0 : processedValue,
     }));
 
     // Clear error for this field when user starts typing
@@ -90,6 +108,23 @@ export const AddTaskModal = ({ isOpen, onClose, onAddTask }: AddTaskModalProps) 
       setErrors((prev) => {
         const newErrors = { ...prev };
         delete newErrors[name];
+        return newErrors;
+      });
+    }
+  };
+
+  // Handle user selection change
+  const handleUserSelectionChange = (userIds: string[]) => {
+    setFormData((prev) => ({
+      ...prev,
+      AssignedTo: userIds,
+    }));
+
+    // Clear error when users are selected
+    if (errors.AssignedTo) {
+      setErrors((prev) => {
+        const newErrors = { ...prev };
+        delete newErrors.AssignedTo;
         return newErrors;
       });
     }
@@ -103,7 +138,7 @@ export const AddTaskModal = ({ isOpen, onClose, onAddTask }: AddTaskModalProps) 
       Status: TaskStatus.Pending,
       Priority: TaskPriority.Medium,
       EstimatedHours: 0,
-      AssignedTo: '',
+      AssignedTo: [],
       ScheduledStartDate: '',
       ScheduledStartTime: '',
     });
@@ -152,16 +187,34 @@ export const AddTaskModal = ({ isOpen, onClose, onAddTask }: AddTaskModalProps) 
                 name="Title"
                 value={formData.Title}
                 onChange={handleChange}
+                maxLength={TITLE_MAX_LENGTH}
                 className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:text-white dark:border-slate-600 transition-colors ${
                   errors.Title
                     ? 'border-red-500 dark:border-red-400'
+                    : formData.Title.length > TITLE_MAX_LENGTH * 0.9
+                    ? 'border-orange-500 dark:border-orange-400'
                     : 'border-gray-300 dark:border-slate-600'
                 }`}
                 placeholder="Enter task title"
               />
-              {errors.Title && (
-                <p className="mt-1 text-sm text-red-500 dark:text-red-400">{errors.Title}</p>
-              )}
+              <div className="mt-1 flex items-center justify-between">
+                {errors.Title && (
+                  <p className="text-sm text-red-500 dark:text-red-400">{errors.Title}</p>
+                )}
+                <p
+                  className={`text-xs ml-auto ${
+                    formData.Title.length > TITLE_MAX_LENGTH
+                      ? 'text-red-500 dark:text-red-400 font-semibold'
+                      : formData.Title.length > TITLE_MAX_LENGTH * 0.9
+                      ? 'text-orange-500 dark:text-orange-400'
+                      : 'text-gray-500 dark:text-gray-400'
+                  }`}
+                >
+                  {formData.Title.length > TITLE_MAX_LENGTH
+                    ? `${formData.Title.length - TITLE_MAX_LENGTH} characters over limit`
+                    : `${TITLE_MAX_LENGTH - formData.Title.length} characters remaining`}
+                </p>
+              </div>
             </div>
 
             {/* Description Field */}
@@ -178,18 +231,36 @@ export const AddTaskModal = ({ isOpen, onClose, onAddTask }: AddTaskModalProps) 
                 value={formData.Description}
                 onChange={handleChange}
                 rows={4}
+                maxLength={DESCRIPTION_MAX_LENGTH}
                 className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:text-white dark:border-slate-600 transition-colors ${
                   errors.Description
                     ? 'border-red-500 dark:border-red-400'
+                    : formData.Description.length > DESCRIPTION_MAX_LENGTH * 0.9
+                    ? 'border-orange-500 dark:border-orange-400'
                     : 'border-gray-300 dark:border-slate-600'
                 }`}
                 placeholder="Enter task description"
               />
-              {errors.Description && (
-                <p className="mt-1 text-sm text-red-500 dark:text-red-400">
-                  {errors.Description}
+              <div className="mt-1 flex items-center justify-between">
+                {errors.Description && (
+                  <p className="text-sm text-red-500 dark:text-red-400">
+                    {errors.Description}
+                  </p>
+                )}
+                <p
+                  className={`text-xs ml-auto ${
+                    formData.Description.length > DESCRIPTION_MAX_LENGTH
+                      ? 'text-red-500 dark:text-red-400 font-semibold'
+                      : formData.Description.length > DESCRIPTION_MAX_LENGTH * 0.9
+                      ? 'text-orange-500 dark:text-orange-400'
+                      : 'text-gray-500 dark:text-gray-400'
+                  }`}
+                >
+                  {formData.Description.length > DESCRIPTION_MAX_LENGTH
+                    ? `${formData.Description.length - DESCRIPTION_MAX_LENGTH} characters over limit`
+                    : `${DESCRIPTION_MAX_LENGTH - formData.Description.length} characters remaining`}
                 </p>
-              )}
+              </div>
             </div>
 
             {/* Status and Priority Row */}
@@ -271,31 +342,19 @@ export const AddTaskModal = ({ isOpen, onClose, onAddTask }: AddTaskModalProps) 
               </div>
 
               {/* Assigned To Field */}
-              <div>
+              <div className="md:col-span-2">
                 <label
                   htmlFor="AssignedTo"
                   className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 transition-colors"
                 >
                   Assigned To <span className="text-red-500 dark:text-red-400">*</span>
                 </label>
-                <input
-                  type="text"
-                  id="AssignedTo"
-                  name="AssignedTo"
-                  value={formData.AssignedTo}
-                  onChange={handleChange}
-                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:text-white dark:border-slate-600 transition-colors ${
-                    errors.AssignedTo
-                      ? 'border-red-500 dark:border-red-400'
-                      : 'border-gray-300 dark:border-slate-600'
-                  }`}
-                  placeholder="Enter assignee name"
+                <UserSearch
+                  selectedUserIds={formData.AssignedTo}
+                  onSelectionChange={handleUserSelectionChange}
+                  error={errors.AssignedTo}
+                  placeholder="Search users by username or name..."
                 />
-                {errors.AssignedTo && (
-                  <p className="mt-1 text-sm text-red-500 dark:text-red-400">
-                    {errors.AssignedTo}
-                  </p>
-                )}
               </div>
             </div>
 

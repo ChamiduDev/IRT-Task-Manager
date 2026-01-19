@@ -1,12 +1,15 @@
 import type { Task } from '../types';
 import { TaskStatus, TaskPriority } from '../types';
-import { Clock, Trash2, ChevronDown, Calendar, Edit } from 'lucide-react';
+import { Clock, Trash2, ChevronDown, Calendar, Edit, User as UserIcon } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
+import { ResumeTaskModal } from './ResumeTaskModal';
+import { useAuth } from '../contexts/AuthContext';
+import { useUsers } from '../contexts/UsersContext';
 
 interface TaskCardProps {
   task: Task;
-  onStatusChange: (taskId: string, newStatus: TaskStatus) => void;
+  onStatusChange: (taskId: string, newStatus: TaskStatus, scheduledDate?: string, scheduledTime?: string) => void;
   onDelete: (taskId: string) => void;
   onEdit: (task: Task) => void;
 }
@@ -17,10 +20,27 @@ interface TaskCardProps {
  * Supports both light and dark modes
  */
 export const TaskCard = ({ task, onStatusChange, onDelete, onEdit }: TaskCardProps) => {
+  const { hasPermission, user } = useAuth();
+  const { getUserName } = useUsers();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isResumeModalOpen, setIsResumeModalOpen] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState<string>('');
   const [isDeadlineApproaching, setIsDeadlineApproaching] = useState(false);
+  
+  // Check if user is assigned to this task
+  const isAssigned = user && (
+    Array.isArray(task.AssignedTo)
+      ? task.AssignedTo.includes(user.id)
+      : task.AssignedTo === user.id
+  );
+  
+  // Check permissions
+  const canEdit = hasPermission('tasks:update');
+  const canDelete = hasPermission('tasks:delete');
+  const canHold = hasPermission('tasks:hold'); // Permission to put tasks on hold
+  // Users can update status if they have tasks:update permission OR if they're assigned to the task
+  const canUpdateStatus = hasPermission('tasks:update') || isAssigned;
 
   // Calculate deadline and countdown timer
   useEffect(() => {
@@ -85,6 +105,8 @@ export const TaskCard = ({ task, onStatusChange, onDelete, onEdit }: TaskCardPro
         return [TaskStatus.Completed];
       case TaskStatus.Completed:
         return []; // No transitions from completed
+      case TaskStatus.Hold:
+        return [TaskStatus.Pending, TaskStatus.InProgress]; // Can resume from hold
       default:
         return [];
     }
@@ -183,13 +205,22 @@ export const TaskCard = ({ task, onStatusChange, onDelete, onEdit }: TaskCardPro
   };
 
   const nextStatusOptions = getNextStatusOptions(task.Status);
-  const canUpdateStatus = nextStatusOptions.length > 0;
+  const hasNextStatus = nextStatusOptions.length > 0;
 
-  const handleStatusChange = (newStatus: TaskStatus) => {
+  const handleStatusChange = (newStatus: TaskStatus, scheduledDate?: string, scheduledTime?: string) => {
     if (task.id) {
-      onStatusChange(task.id, newStatus);
+      onStatusChange(task.id, newStatus, scheduledDate, scheduledTime);
     }
     setIsDropdownOpen(false);
+  };
+
+  const handleResumeFromHold = (taskId: string, newStatus: TaskStatus, scheduledDate?: string, scheduledTime?: string) => {
+    // Call onStatusChange directly with the correct parameters
+    // Use taskId from the parameter (provided by ResumeTaskModal) to ensure consistency
+    if (taskId) {
+      onStatusChange(taskId, newStatus, scheduledDate, scheduledTime);
+    }
+    setIsResumeModalOpen(false);
   };
 
   const handleDeleteClick = () => {
@@ -202,16 +233,24 @@ export const TaskCard = ({ task, onStatusChange, onDelete, onEdit }: TaskCardPro
     }
   };
 
-  // Get card border color based on deadline
+  // Get card border color based on deadline and hold status
   const getCardBorderClass = (): string => {
+    // Hold tasks get distinct orange border
+    if (task.Status === TaskStatus.Hold) {
+      return 'border-orange-400 dark:border-orange-600 border-2';
+    }
     if (isDeadlineApproaching && task.Status !== TaskStatus.Completed) {
       return 'border-red-500 dark:border-red-600 border-2';
     }
     return 'border-gray-200 dark:border-slate-700';
   };
 
-  // Get card background color based on deadline
+  // Get card background color based on deadline and hold status
   const getCardBgClass = (): string => {
+    // Hold tasks get distinct orange background tint
+    if (task.Status === TaskStatus.Hold) {
+      return 'bg-orange-50 dark:bg-orange-900/20';
+    }
     if (isDeadlineApproaching && task.Status !== TaskStatus.Completed) {
       return 'bg-red-50 dark:bg-red-900/10';
     }
@@ -253,8 +292,37 @@ export const TaskCard = ({ task, onStatusChange, onDelete, onEdit }: TaskCardPro
         {/* Assigned To */}
         <div className="text-sm text-gray-700 dark:text-gray-300 transition-colors">
           <span className="font-medium text-gray-900 dark:text-white">Assigned to:</span>{' '}
-          <span className="text-gray-600 dark:text-gray-400">{task.AssignedTo}</span>
+          <span className="text-gray-600 dark:text-gray-400">
+            {Array.isArray(task.AssignedTo) 
+              ? task.AssignedTo.length > 0 
+                ? (
+                    <span className="flex flex-wrap gap-1 items-center">
+                      {task.AssignedTo.map((userId, index) => (
+                        <span
+                          key={userId}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded text-xs"
+                        >
+                          <UserIcon className="w-3 h-3" />
+                          {getUserName(userId)}
+                          {index < task.AssignedTo.length - 1 && ','}
+                        </span>
+                      ))}
+                    </span>
+                  )
+                : 'No one assigned'
+              : task.AssignedTo || 'No one assigned'}
+          </span>
         </div>
+
+        {/* Put On Hold By - Only show if task is on hold */}
+        {task.Status === TaskStatus.Hold && task.PutOnHoldBy && (
+          <div className="text-sm text-gray-700 dark:text-gray-300 transition-colors">
+            <span className="font-medium text-gray-900 dark:text-white">Put on hold by:</span>{' '}
+            <span className="text-orange-600 dark:text-orange-400 font-medium">
+              {task.PutOnHoldByName || getUserName(task.PutOnHoldBy)}
+            </span>
+          </div>
+        )}
 
         {/* Creation Timestamp */}
         <div className="flex items-center text-gray-600 dark:text-gray-400 text-xs transition-colors">
@@ -295,63 +363,98 @@ export const TaskCard = ({ task, onStatusChange, onDelete, onEdit }: TaskCardPro
           {task.Status}
         </span>
 
-        {canUpdateStatus && (
-          <div className="relative">
+        <div className="flex items-center gap-2">
+          {/* Put on Hold button - only show if task is not already on hold and user has permission */}
+          {canHold && task.Status !== TaskStatus.Hold && (
             <button
-              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-slate-700 hover:bg-gray-100 dark:hover:bg-slate-600 rounded-md transition-colors border border-gray-200 dark:border-slate-600"
+              onClick={() => handleStatusChange(TaskStatus.Hold)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-900/20 hover:bg-orange-100 dark:hover:bg-orange-900/30 rounded-md transition-colors border border-orange-200 dark:border-orange-800"
+              type="button"
             >
-              Update
-              <ChevronDown className="w-3.5 h-3.5" />
+              Put on Hold
             </button>
+          )}
 
-            {isDropdownOpen && (
-              <>
-                {/* Backdrop to close dropdown */}
-                <div
-                  className="fixed inset-0 z-10"
-                  onClick={() => setIsDropdownOpen(false)}
-                />
-                {/* Dropdown Menu */}
-                <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-md shadow-lg border border-gray-200 dark:border-slate-700 z-20">
-                  <div className="py-1">
-                    {nextStatusOptions.map((status) => (
-                      <button
-                        key={status}
-                        onClick={() => handleStatusChange(status)}
-                        className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
-                      >
-                        Move to {status}
-                      </button>
-                    ))}
+          {/* Status Update Dropdown - only show if task is not on hold and user can update status */}
+          {canUpdateStatus && hasNextStatus && task.Status !== TaskStatus.Hold && (
+            <div className="relative">
+              <button
+                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-slate-700 hover:bg-gray-100 dark:hover:bg-slate-600 rounded-md transition-colors border border-gray-200 dark:border-slate-600"
+                type="button"
+              >
+                Update
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+
+              {isDropdownOpen && (
+                <>
+                  {/* Backdrop to close dropdown */}
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setIsDropdownOpen(false)}
+                  />
+                  {/* Dropdown Menu */}
+                  <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-md shadow-lg border border-gray-200 dark:border-slate-700 z-20">
+                    <div className="py-1">
+                      {nextStatusOptions.map((status) => (
+                        <button
+                          key={status}
+                          onClick={() => handleStatusChange(status)}
+                          className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
+                          type="button"
+                        >
+                          Move to {status}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              </>
-            )}
-          </div>
-        )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Resume from Hold button - show if task is on hold and user has Hold Task permission
+              This works independently of Edit permission - users with only Hold permission can resume tasks */}
+          {canHold && task.Status === TaskStatus.Hold && hasNextStatus && (
+            <button
+              onClick={() => setIsResumeModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-slate-700 hover:bg-gray-100 dark:hover:bg-slate-600 rounded-md transition-colors border border-gray-200 dark:border-slate-600"
+              type="button"
+              title="Resume task from hold"
+            >
+              Resume
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Action Buttons */}
-      <div className="mt-auto flex gap-2">
-        {/* Edit Button */}
-        <button
-          onClick={() => onEdit(task)}
-          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-slate-700 hover:bg-gray-100 dark:hover:bg-slate-600 hover:text-blue-600 dark:hover:text-blue-400 rounded-md transition-all duration-200 border border-gray-200 dark:border-slate-600"
-        >
-          <Edit className="w-4 h-4" />
-          Edit
-        </button>
+      {(canEdit || canDelete) && (
+        <div className="mt-auto flex gap-2">
+          {/* Edit Button */}
+          {canEdit && (
+            <button
+              onClick={() => onEdit(task)}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-slate-700 hover:bg-gray-100 dark:hover:bg-slate-600 hover:text-blue-600 dark:hover:text-blue-400 rounded-md transition-all duration-200 border border-gray-200 dark:border-slate-600"
+            >
+              <Edit className="w-4 h-4" />
+              Edit
+            </button>
+          )}
 
-        {/* Delete Button */}
-        <button
-          onClick={handleDeleteClick}
-          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-slate-700 hover:bg-gray-100 dark:hover:bg-slate-600 hover:text-red-600 dark:hover:text-red-400 rounded-md transition-all duration-200 border border-gray-200 dark:border-slate-600"
-        >
-          <Trash2 className="w-4 h-4" />
-          Delete
-        </button>
-      </div>
+          {/* Delete Button */}
+          {canDelete && (
+            <button
+              onClick={handleDeleteClick}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-slate-700 hover:bg-gray-100 dark:hover:bg-slate-600 hover:text-red-600 dark:hover:text-red-400 rounded-md transition-all duration-200 border border-gray-200 dark:border-slate-600"
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       <DeleteConfirmationModal
@@ -359,6 +462,14 @@ export const TaskCard = ({ task, onStatusChange, onDelete, onEdit }: TaskCardPro
         onClose={() => setIsDeleteModalOpen(false)}
         onConfirm={handleDeleteConfirm}
         taskTitle={task.Title}
+      />
+
+      {/* Resume Task Modal */}
+      <ResumeTaskModal
+        isOpen={isResumeModalOpen}
+        task={task}
+        onClose={() => setIsResumeModalOpen(false)}
+        onResume={handleResumeFromHold}
       />
     </div>
   );
